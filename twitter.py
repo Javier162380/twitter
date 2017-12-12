@@ -1,15 +1,15 @@
 import requests
 from requests_oauthlib import OAuth1
-from os import path, makedirs
+from os import path, makedirs,remove
 import json
 from time import sleep
+import  boto3
 
 
 class twitter(object):
-    """Perform some useful methods from the twitter api"""
-
+    """Perform some useful methods from the twitter api."""
     def __init__(self, api_key, api_secret, api_token, api_token_secret):
-        """we need this four arguments to create an instance"""
+        """we need this four arguments to create an instance."""
         self.api_key = api_key
         self.api_secret = api_secret
         self.api_token = api_token
@@ -23,7 +23,7 @@ class twitter(object):
         self.formats = {'json': '.json', 'txt': '.txt'}
 
     def vercredentials(self):
-        """This method it´s just perform to test our API connection"""
+        """This method it´s just perform to test our API connection."""
         request = self.session.get('https://api.twitter.com/1.1/account/verify_credentials.json'
                                    , auth=self.connection)
         if request.status_code == 200:
@@ -35,7 +35,7 @@ class twitter(object):
     def get_data(self, query, filename, extension, filepath=None):
         """This method it is perform to retrieve data from the twitter api."""
         if self.formats.get(extension, None) is None:
-            raise "El formato escogido no esta soportado en esta clase."
+            raise ValueError("El formato escogido no esta soportado en esta clase.")
         else:
             extension = self.formats.get(extension, None)
             if filepath is not None:
@@ -83,20 +83,44 @@ class twitter(object):
                 file.write(str(data))
         return file
 
-    def streamingapi(self,query, filename):
-
-        file = open(str(filename), 'w')
-        count = 1
-        req = self.session.post('https://stream.twitter.com/1.1/statuses/filter.json?track='+str(query))
-                                , auth=self.connection, stream=True)
+    def streamingapi(self, query, filename, bucket):
+        """This method is perform to retrieve data in streaming for twitter. If you want to filter various tweets
+        the query statement need to be introduce as a tuple. The results are going to be save in an amazon S3 bucket."""
         try:
-            if req.status_code == 420:
-                sleep(60 * count)
-                count += 1
-            elif req.status_code == 200:
-                for line in req.iter_lines():
-                    if line:
-                        decoded_line = line.decode('utf-8')
-                        file.write(str(json.loads(decoded_line)))
-        finally:
+            file = open(str(filename)+'.txt', 'w')
+            count = 1
+            max_sleep = 320
+            custom_sleep = 5
+            if type(query) is tuple:
+                filtertweets = ','.join(i for i in query)
+                url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+filtertweets
+            elif type(query) is str:
+                url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+query
+            else:
+                raise ValueError('Formato no adecuado, formato adecuado str o tupla de str.')
+            req = self.session.post(url, auth=self.connection, stream=True)
+            try:
+                if req.status_code == 420:
+                    sleep(60 * count)
+                    count += 1
+                elif req.status_code == 200:
+                    for line in req.iter_lines():
+                        if line:
+                            decoded_line = line.decode('utf-8')
+                            file.write(str(json.loads(decoded_line)))
+                else:
+                    sleep(min(custom_sleep,max_sleep))
+                    custom_sleep += 5
+            except Exception as e:
+                sleep(60)
+                self.session = requests.session()
+        except KeyboardInterrupt:
             file.close()
+            s3 = boto3.resource('s3')
+            print('hola')
+            try:
+                s3.Bucket(bucket).upload_file(filename, filename)
+                print('Carga realizada con exito el archivo fue subido a S3.')
+                remove(file)
+            except Exception as e:
+                raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local {0}'.format(e))
