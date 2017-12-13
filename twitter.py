@@ -1,9 +1,10 @@
 import requests
 from requests_oauthlib import OAuth1
-from os import path, makedirs,remove
+from os import path, makedirs
 import json
 from time import sleep
-import  boto3
+import boto3
+from datetime import datetime, timedelta
 
 
 class twitter(object):
@@ -83,23 +84,30 @@ class twitter(object):
                 file.write(str(data))
         return file
 
-    def streamingapi(self, query, filename, bucket):
+    def streamingapi(self, query, filename, bucket, number_of_days):
         """This method is perform to retrieve data in streaming for twitter. If you want to filter various tweets
         the query statement need to be introduce as a tuple. The results are going to be save in an amazon S3 bucket."""
-        try:
-            file = open(str(filename)+'.txt', 'w')
-            count = 1
-            max_sleep = 320
-            custom_sleep = 5
-            if type(query) is tuple:
-                filtertweets = ','.join(i for i in query)
-                url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+filtertweets
-            elif type(query) is str:
-                url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+query
-            else:
-                raise ValueError('Formato no adecuado, formato adecuado str o tupla de str.')
-            req = self.session.post(url, auth=self.connection, stream=True)
+        #we create the file
+        s3file=str(filename)+'.txt'
+        file = open(str(filename)+'.txt', 'w')
+        #custom parameters to deal with the requests,
+        count = 1
+        max_sleep = 320
+        custom_sleep = 5
+        number_of_minutes=round(number_of_days*60)
+        end_time = datetime.now() + timedelta(minutes=number_of_minutes)
+        #we prepare the txt file.
+        if type(query) is tuple:
+            filtertweets = ','.join(i for i in query)
+            url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+filtertweets
+        elif type(query) is str:
+            url = 'https://stream.twitter.com/1.1/statuses/filter.json?track='+query
+        else:
+            raise ValueError('Formato no adecuado, formato adecuado str o tupla de str.')
+        #we initializa the loop.
+        while datetime.now() <= end_time:
             try:
+                req = self.session.post(url, auth=self.connection, stream=True)
                 if req.status_code == 420:
                     sleep(60 * count)
                     count += 1
@@ -114,13 +122,14 @@ class twitter(object):
             except Exception as e:
                 sleep(60)
                 self.session = requests.session()
-        except KeyboardInterrupt:
-            file.close()
-            s3 = boto3.resource('s3')
-            print('hola')
-            try:
-                s3.Bucket(bucket).upload_file(filename, filename)
-                print('Carga realizada con exito el archivo fue subido a S3.')
-                remove(file)
-            except Exception as e:
-                raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local {0}'.format(e))
+        #we store all the data in S3.
+        s3 = boto3.resource('s3')
+        try:
+            s3.Bucket(bucket).upload_file(s3file, s3file)
+            print('Carga realizada con exito el archivo fue subido a S3.')
+        except Exception as e:
+            raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local.'
+                            'Mensaje de Error {0}'.format(e))
+
+
+
