@@ -95,7 +95,10 @@ class twitter(object):
         max_sleep = 320
         custom_sleep = 5
         number_of_minutes=round(number_of_days*60)
-        end_time = datetime.now() + timedelta(minutes=number_of_minutes)
+        print(number_of_minutes)
+        start_time=datetime.now()
+        end_time = datetime.now()+timedelta(minutes=number_of_minutes)
+        print(end_time)
         #we prepare the txt file.
         if type(query) is tuple:
             filtertweets = ','.join(i for i in query)
@@ -105,21 +108,28 @@ class twitter(object):
         else:
             raise ValueError('Formato no adecuado, formato adecuado str o tupla de str.')
         #we initializa the loop.
-        while datetime.now() <= end_time:
+        while start_time < end_time:
             try:
                 req = self.session.post(url, auth=self.connection, stream=True)
+                start_time = datetime.now()
                 if req.status_code == 420:
                     sleep(60 * count)
                     count += 1
                 elif req.status_code == 200:
                     for line in req.iter_lines():
-                        if line:
-                            decoded_line = line.decode('utf-8')
-                            file.write(str(json.loads(decoded_line)))
+                        if start_time < end_time:
+                            if line:
+                                decoded_line = line.decode('utf-8')
+                                file.write(str(json.loads(decoded_line)))
+                                start_time = datetime.now()
+                                print(start_time)
+                        else:
+                            break
                 else:
                     sleep(min(custom_sleep,max_sleep))
                     custom_sleep += 5
             except Exception as e:
+                print(e)
                 sleep(60)
                 self.session = requests.session()
         #we store all the data in S3.
@@ -130,6 +140,5 @@ class twitter(object):
         except Exception as e:
             raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local.'
                             'Mensaje de Error {0}'.format(e))
-
 
 
