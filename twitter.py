@@ -11,7 +11,6 @@ from sys import exit
 
 class twitter(object):
     """Perform some useful methods from the twitter api."""
-    keys={}
     def __init__(self, api_key, api_secret, api_token, api_token_secret):
         """we need this four arguments to create an instance."""
         self.api_key = api_key
@@ -87,19 +86,18 @@ class twitter(object):
                 file.write(str(data))
         return file
 
-    def streamingapi(self, query, filename, bucket, number_of_days, keys=None):
+    def streamingapi(self, query, filename, bucket, number_of_days):
         """This method is perform to retrieve data in streaming from twitter. If you want to filter various tweets
         the query statement need to be introduce as a tuple. The results are going to be save in an amazon S3 bucket.
         First you install awscli and configure your bucket credentials. """
         #we create the file
-        s3file=str(filename)+'.txt'
-        file = open(str(filename)+'.txt', 'w')
+        s3file=str(filename)+'.json'
         #custom parameters to deal with the requests,
         count = 1
         max_sleep = 320
         custom_sleep = 5
-        number_of_minutes=round(number_of_days*24*60)
-        start_time=datetime.now()
+        number_of_minutes=round(number_of_days*60*24)
+        start_time = datetime.now()
         end_time = datetime.now()+timedelta(minutes=number_of_minutes)
         #we prepare the txt file.
         if type(query) is list:
@@ -115,40 +113,41 @@ class twitter(object):
         while start_time < end_time:
             try:
                 req = self.session.post(url, auth=self.connection, stream=True)
-                start_time = datetime.now()
                 if req.status_code == 420:
                     sleep(60 * count)
                     count += 1
+                    start_time = datetime.now()
+                    print('420')
                 elif req.status_code == 200:
-                    try:
-                        for line in req.iter_lines():
-                            if start_time < end_time:
-                                if line:
-                                    decoded_line = json.loads(line.decode('utf-8'))
-                                    if keys is None:
-                                        file.write(str(decoded_line))
-                                    else:
-                                        for key in keys:
-                                            if key in decoded_line.keys():
-                                                decoded_line.pop(key)
-                                            else:
-                                                pass
-                                        file.write(str(decoded_line))
-                                    start_time = datetime.now()
-                            else:
-                                break
-                    except KeyboardInterrupt:
-                        s3 = boto3.resource('s3')
+                    with open(s3file, 'a') as file:
                         try:
-                            s3.Bucket(bucket).upload_file(s3file, s3file)
-                            print('Archivo subido  a S3 por interupcción del usuario, fecha {}'.format(start_time()))
-                        except Exception as e:
-                            raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local.'
-                                            'Mensaje de Error {0}'.format(e))
-                            exit()
+                            for line in req.iter_lines():
+                                if start_time < end_time:
+                                    if line:
+                                        decoded_line = json.loads(line.decode('utf-8'))
+                                        json.dump(decoded_line, file)
+                                        file.write('\n')
+                                        start_time = datetime.now()
+                                        print(start_time)
+                                else:
+                                    file.close()
+                                    break
+                        except KeyboardInterrupt:
+                            file.close()
+                            s3 = boto3.resource('s3')
+                            try:
+                                s3.Bucket(bucket).upload_file(s3file, s3file)
+                                print('Archivo subido  a S3 por interupcción del '
+                                      'usuario, fecha {}'.format(str(start_time)))
+                                exit()
+                            except Exception as e:
+                                raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local.'
+                                                'Mensaje de Error {0}'.format(e))
                 else:
                     sleep(min(custom_sleep,max_sleep))
                     custom_sleep += 5
+                    start_time = datetime.now()
+                    print(str(req.status_code))
             except Exception as e:
                 print(e)
                 sleep(60)
@@ -157,13 +156,11 @@ class twitter(object):
                 s3 = boto3.resource('s3')
                 try:
                     s3.Bucket(bucket).upload_file(s3file, s3file)
-                    print('Archivo subido  a S3 por interupcción del usuario, fecha {}'.format(start_time()))
+                    print('Archivo subido  a S3 por interupcción del usuario, fecha {}'.format(start_time))
+                    exit()
                 except Exception as e:
                     raise Exception('Error al subir el fichero a S3. Puedes comprobar el fichero en local.'
                                     'Mensaje de Error {0}'.format(e))
-                    exit()
-        #we store all the data in S3.
-        s3 = boto3.resource('s3')
         try:
             s3.Bucket(bucket).upload_file(s3file, s3file)
             print('Carga realizada con exito el archivo fue subido a S3.')
