@@ -4,6 +4,7 @@ from mrjob.step import MRStep
 import diccionaries as dic
 import states
 
+
 class MRJOB(MRJob):
     """We are going to perform just some Map Reduce methods. MRJOB"""
     MRJob.SORT_VALUES = True
@@ -43,7 +44,7 @@ class MRJOB(MRJob):
                     # we get the value of each word.
                     value = dic.word_dict_english.get(word.upper(), 0)
                     tweet_value += value
-                    # we get hastags.
+                    # we get english hastags.
                     if '#' in word:
                         yield (word, 1)
                     else:
@@ -61,8 +62,8 @@ class MRJOB(MRJob):
                 elif tweet_value != 0 and tweet_object['geo'] is not None:
                     if len(tweet_object['geo']['coordinates']) == 2 and tweet_object['geo']['type'] == 'Point':
                         for state, polygon in states.statePolygons.items():
-                            if (point_in_polygon(tweet_object['geo']['coordinates'][0],
-                                                 tweet_object['geo']['coordinates'][1], polygon)) == True:
+                            if (MRJOB.point_in_polygon(tweet_object['geo']['coordinates'][0],
+                                                       tweet_object['geo']['coordinates'][1], polygon)) == True:
                                 yield (state, tweet_value)
 
                 elif tweet_value != 0 and tweet_object['user']['location'] is not None:
@@ -107,7 +108,8 @@ class MRJOB(MRJob):
         hastag = sorted(hastag_list, key=lambda tup: tup[0], reverse=True)
         hastag_top_10 = hastag[:10]
         for i in range(len(hastag_top_10)):
-            yield ("Hastag numero " + str(i), hastag_top_10[i][1])
+            yield ("Hastag numero " + str(i + 1) + " repetido " + str(hastag_top_10[i][0])
+                   , hastag_top_10[i][1])
 
     def steps(self):
         return [
